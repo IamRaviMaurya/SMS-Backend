@@ -19,7 +19,6 @@ venv.bak/
 
 # Database (Agar local SQLite use kar rahe hain)
 *.sqlite3
-*.db
 
 # Testing & Coverage (Pytest)
 .pytest_cache/

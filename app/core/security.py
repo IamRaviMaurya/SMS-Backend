@@ -43,23 +43,43 @@ class TokenPayload(BaseModel):
         return self.role == ROLE_SUPER_ADMIN
 
 
+import bcrypt
+
 # ────────── Passwords ──────────
 
 def verify_password(plain_password: str, hashed_password: Optional[str]) -> bool:
     if not plain_password or not hashed_password:
         return False
     try:
-        return pwd_context.verify(plain_password, hashed_password)
-    except (ValueError, TypeError):
+        if pwd_context.verify(plain_password, hashed_password):
+            return True
+    except Exception:
+        pass
+    try:
+        pw_bytes = plain_password.encode('utf-8')
+        hash_bytes = hashed_password.encode('utf-8')
+        return bcrypt.checkpw(pw_bytes, hash_bytes)
+    except Exception:
         return False
 
 
 def get_password_hash(password: str) -> str:
-    return pwd_context.hash(password)
+    try:
+        return pwd_context.hash(password)
+    except Exception:
+        salt = bcrypt.gensalt()
+        return bcrypt.hashpw(password.encode('utf-8'), salt).decode('utf-8')
 
 
 def is_password_hash(value: Optional[str]) -> bool:
-    return bool(value) and pwd_context.identify(value) is not None
+    if not value:
+        return False
+    try:
+        if pwd_context.identify(value) is not None:
+            return True
+    except Exception:
+        pass
+    return value.startswith("$2b$") or value.startswith("$2a$") or value.startswith("$2y$")
 
 
 # ────────── JWT ──────────

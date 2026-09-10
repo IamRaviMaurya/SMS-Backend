@@ -10,6 +10,23 @@ from app.schemas.fee import (
     ClassSummaryItem, MonthlyReportItem, AdvanceCreditAdd, AdvanceCreditResponse,
     BulkFeeStructureCreate
 )
+from app.core.tenancy import require_tenant_id
+
+# NOTE: app.core.tenancy injects `tenant_id = <active tenant>` into every ORM query on
+# tenant-owned tables and refuses to run without an active tenant. The explicit helpers
+# below are kept as defence in depth for the hot paths.
+
+
+def _scoped_payment_query(db: Session):
+    return db.query(FeePayment).filter(FeePayment.tenant_id == require_tenant_id())
+
+
+def _scoped_fee_structure_query(db: Session):
+    return db.query(FeeStructure).filter(FeeStructure.tenant_id == require_tenant_id())
+
+
+def _scoped_student_query(db: Session):
+    return db.query(Student).filter(Student.tenant_id == require_tenant_id())
 
 
 # ─────────────────────────────────────────────
@@ -22,7 +39,7 @@ def generate_receipt_number(db: Session, academic_year: str = "2026-2027") -> st
     prefix = f"REC-{year}-"
 
     last_payment = (
-        db.query(FeePayment)
+        _scoped_payment_query(db)
         .filter(FeePayment.receipt_no.like(f"{prefix}%"))
         .order_by(FeePayment.id.desc())
         .first()
@@ -33,7 +50,7 @@ def generate_receipt_number(db: Session, academic_year: str = "2026-2027") -> st
         last_num = int(last_payment.receipt_no.split("-")[-1])
         return f"{prefix}{last_num + 1:04d}"
     except (ValueError, IndexError):
-        total_count = db.query(FeePayment).count() + 1
+        total_count = _scoped_payment_query(db).count() + 1
         return f"{prefix}{total_count:04d}"
 
 
@@ -42,14 +59,16 @@ def generate_receipt_number(db: Session, academic_year: str = "2026-2027") -> st
 # ─────────────────────────────────────────────
 
 def get_all_fee_structures(db: Session, division: Optional[str] = None) -> List[FeeStructure]:
-    query = db.query(FeeStructure)
+    query = _scoped_fee_structure_query(db)
     if division and division != "All":
         query = query.filter(FeeStructure.division == division)
     return query.order_by(FeeStructure.id.desc()).all()
 
 
 def create_fee_structure(db: Session, fee_in: FeeStructureCreate) -> FeeStructure:
+    active_tenant = require_tenant_id()
     structure = FeeStructure(
+        tenant_id=active_tenant,
         category=fee_in.category,
         division=fee_in.division,
         standard=fee_in.standard,
@@ -68,9 +87,11 @@ def create_fee_structure(db: Session, fee_in: FeeStructureCreate) -> FeeStructur
 
 def bulk_create_fee_structures(db: Session, bulk_in: BulkFeeStructureCreate) -> List[FeeStructure]:
     """Create multiple fee structures in one transaction."""
+    active_tenant = require_tenant_id()
     structures = []
     for item in bulk_in.items:
         s = FeeStructure(
+            tenant_id=active_tenant,
             category=item.category,
             division=item.division,
             standard=item.standard,
@@ -90,7 +111,7 @@ def bulk_create_fee_structures(db: Session, bulk_in: BulkFeeStructureCreate) -> 
 
 
 def update_fee_structure(db: Session, structure_id: int, fee_in) -> Optional[FeeStructure]:
-    structure = db.query(FeeStructure).filter(FeeStructure.id == structure_id).first()
+    structure = _scoped_fee_structure_query(db).filter(FeeStructure.id == structure_id).first()
     if not structure:
         return None
     update_data = fee_in.dict(exclude_unset=True)
@@ -102,7 +123,7 @@ def update_fee_structure(db: Session, structure_id: int, fee_in) -> Optional[Fee
 
 
 def delete_fee_structure(db: Session, structure_id: int) -> bool:
-    structure = db.query(FeeStructure).filter(FeeStructure.id == structure_id).first()
+    structure = _scoped_fee_structure_query(db).filter(FeeStructure.id == structure_id).first()
     if not structure:
         return False
     db.delete(structure)
@@ -115,12 +136,12 @@ def delete_fee_structure(db: Session, structure_id: int) -> bool:
 # ─────────────────────────────────────────────
 
 def get_fee_structures_for_student(db: Session, student_id: int) -> List[FeeStructureResponse]:
-    student = db.query(Student).filter(Student.id == student_id).first()
+    student = _scoped_student_query(db).filter(Student.id == student_id).first()
     if not student:
         return []
 
     # Match by division and standard
-    structures = db.query(FeeStructure).filter(
+    structures = _scoped_fee_structure_query(db).filter(
         FeeStructure.division == student.division
     ).all()
 
@@ -245,7 +266,7 @@ def get_fee_structures_for_student(db: Session, student_id: int) -> List[FeeStru
 # ─────────────────────────────────────────────
 
 def process_fee_collection(db: Session, collect_in: FeeCollectCreate) -> FeePayment:
-    student = db.query(Student).filter(Student.id == collect_in.student_id).first()
+    student = _scoped_student_query(db).filter(Student.id == collect_in.student_id).first()
     if not student:
         raise ValueError("Student not found")
 
@@ -261,7 +282,10 @@ def process_fee_collection(db: Session, collect_in: FeeCollectCreate) -> FeePaym
     net_paid = total_amount + collect_in.late_fine - collect_in.discount - advance_used
     payment_date = datetime.now().strftime("%Y-%m-%d")
 
+    active_tenant = require_tenant_id()
+
     payment = FeePayment(
+        tenant_id=active_tenant,
         receipt_no=receipt_no,
         student_id=student.id,
         payment_date=payment_date,
@@ -282,6 +306,7 @@ def process_fee_collection(db: Session, collect_in: FeeCollectCreate) -> FeePaym
 
     for item in collect_in.items:
         detail = PaymentDetail(
+            tenant_id=active_tenant,
             payment_id=payment.id,
             fee_head=item.fee_head,
             amount=item.amount,
@@ -306,11 +331,11 @@ def process_fee_collection(db: Session, collect_in: FeeCollectCreate) -> FeePaym
 # ─────────────────────────────────────────────
 
 def get_receipt_by_id(db: Session, receipt_id: int) -> Optional[FeeReceiptResponse]:
-    payment = db.query(FeePayment).filter(FeePayment.id == receipt_id).first()
+    payment = _scoped_payment_query(db).filter(FeePayment.id == receipt_id).first()
     if not payment:
         return None
 
-    student = db.query(Student).filter(Student.id == payment.student_id).first()
+    student = _scoped_student_query(db).filter(Student.id == payment.student_id).first()
     details = db.query(PaymentDetail).filter(PaymentDetail.payment_id == payment.id).all()
 
     items = [
@@ -392,7 +417,7 @@ def get_receipt_by_id(db: Session, receipt_id: int) -> Optional[FeeReceiptRespon
 # ─────────────────────────────────────────────
 
 def delete_payment(db: Session, payment_id: int) -> dict:
-    payment = db.query(FeePayment).filter(FeePayment.id == payment_id).first()
+    payment = _scoped_payment_query(db).filter(FeePayment.id == payment_id).first()
     if not payment:
         return None
     receipt_no = payment.receipt_no
@@ -407,7 +432,7 @@ def delete_payment(db: Session, payment_id: int) -> dict:
 # ─────────────────────────────────────────────
 
 def get_student_payment_history(db: Session, student_id: int) -> Optional[StudentPaymentHistoryResponse]:
-    student = db.query(Student).filter(Student.id == student_id).first()
+    student = _scoped_student_query(db).filter(Student.id == student_id).first()
     if not student:
         return None
 
@@ -454,7 +479,7 @@ def get_defaulter_list(
     standard: Optional[str] = None,
     min_due: float = 1.0,
 ) -> List[DefaulterResponse]:
-    query = db.query(Student).filter(Student.status == "Active")
+    query = _scoped_student_query(db).filter(Student.status == "Active")
     if division and division != "All":
         query = query.filter(Student.division == division)
     if standard and standard != "All":
@@ -467,7 +492,8 @@ def get_defaulter_list(
     # Bulk load all payments for these students
     student_ids = [s.id for s in students]
     payments = (
-        db.query(FeePayment.student_id, func.sum(FeePayment.net_paid).label("total_paid"))
+        _scoped_payment_query(db)
+        .with_entities(FeePayment.student_id, func.sum(FeePayment.net_paid).label("total_paid"))
         .filter(FeePayment.student_id.in_(student_ids))
         .group_by(FeePayment.student_id)
         .all()
@@ -515,7 +541,7 @@ def get_all_payments_history(
     academic_year: Optional[str] = "2026-2027",
     payment_mode: Optional[str] = None,
 ) -> List[FeeReceiptResponse]:
-    query = db.query(FeePayment)
+    query = _scoped_payment_query(db)
     if academic_year and academic_year != "All":
         year_prefix = f"REC-{academic_year.split('-')[0]}-%"
         query = query.filter(FeePayment.receipt_no.like(year_prefix))
@@ -536,7 +562,7 @@ def get_all_payments_history(
 # ─────────────────────────────────────────────
 
 def get_class_wise_summary(db: Session, academic_year: Optional[str] = "2026-2027") -> List[ClassSummaryItem]:
-    students = db.query(Student).filter(Student.status == "Active")
+    students = _scoped_student_query(db).filter(Student.status == "Active")
     if academic_year and academic_year != "All":
         students = students.filter(Student.academic_year == academic_year)
     students = students.all()
@@ -544,7 +570,8 @@ def get_class_wise_summary(db: Session, academic_year: Optional[str] = "2026-202
     # Bulk load paid amounts
     student_ids = [s.id for s in students]
     payments = (
-        db.query(FeePayment.student_id, func.sum(FeePayment.net_paid).label("total_paid"))
+        _scoped_payment_query(db)
+        .with_entities(FeePayment.student_id, func.sum(FeePayment.net_paid).label("total_paid"))
         .filter(FeePayment.student_id.in_(student_ids))
         .group_by(FeePayment.student_id)
         .all()
@@ -600,7 +627,7 @@ def get_monthly_report(
     db: Session,
     academic_year: Optional[str] = "2026-2027",
 ) -> List[MonthlyReportItem]:
-    query = db.query(FeePayment)
+    query = _scoped_payment_query(db)
     if academic_year and academic_year != "All":
         year_prefix = f"REC-{academic_year.split('-')[0]}-%"
         query = query.filter(FeePayment.receipt_no.like(year_prefix))
@@ -653,7 +680,7 @@ def get_monthly_report(
 # ─────────────────────────────────────────────
 
 def add_advance_credit(db: Session, advance_in: AdvanceCreditAdd) -> AdvanceCreditResponse:
-    student = db.query(Student).filter(Student.id == advance_in.student_id).first()
+    student = _scoped_student_query(db).filter(Student.id == advance_in.student_id).first()
     if not student:
         raise ValueError("Student not found")
 
@@ -673,7 +700,7 @@ def add_advance_credit(db: Session, advance_in: AdvanceCreditAdd) -> AdvanceCred
 
 
 def get_advance_balance(db: Session, student_id: int) -> Optional[AdvanceCreditResponse]:
-    student = db.query(Student).filter(Student.id == student_id).first()
+    student = _scoped_student_query(db).filter(Student.id == student_id).first()
     if not student:
         return None
 

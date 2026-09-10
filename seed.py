@@ -4,7 +4,12 @@ import os
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
 from app.core.database import SessionLocal, engine, Base
-from app.models import Student, FeeStructure, FeePayment, PaymentDetail
+from app.core.config import settings
+from app.core.security import get_password_hash
+from app.core.tenancy import set_current_tenant_id
+from app.models import Student, FeeStructure, FeePayment, PaymentDetail, Tenant, TenantStatus, SubscriptionPlan, User
+
+DEFAULT_TENANT_ID = "default-tenant-001"
 from app.services.fee_service import process_fee_collection
 from app.schemas.fee import FeeCollectCreate, FeeItemCollect
 
@@ -20,7 +25,27 @@ def seed_database():
     Base.metadata.create_all(bind=engine)
     db = SessionLocal()
 
+    # Everything seeded below belongs to the default school. The tenant-scoping hooks
+    # stamp tenant_id on every row and refuse to write without an active tenant.
+    set_current_tenant_id(DEFAULT_TENANT_ID)
+
     try:
+        print("Seeding Default Tenant & Login Accounts...")
+        db.add(Tenant(
+            id=DEFAULT_TENANT_ID, school_name="Avdhoot Bhagwan Ram Vidyalaya", slug="main",
+            contact_email="admin@school.com", contact_phone="7276669858",
+            status=TenantStatus.VERIFIED, subscription_plan=SubscriptionPlan.PREMIUM, student_limit=5000,
+        ))
+        db.add(User(
+            email=settings.SUPER_ADMIN_EMAIL.lower(), password_hash=get_password_hash(settings.SUPER_ADMIN_PASSWORD),
+            role="SUPER_ADMIN", full_name="Platform Super Admin", tenant_id=None,
+        ))
+        db.add(User(
+            email="admin@school.com", password_hash=get_password_hash("admin123"),
+            role="SCHOOL_ADMIN", full_name="Principal / Accounts Administrator", tenant_id=DEFAULT_TENANT_ID,
+        ))
+        db.commit()
+
         print("Seeding Monthly & Annual Fee Structures across Academic Divisions...")
         
         fee_structures = []
@@ -199,9 +224,9 @@ def seed_database():
 
         print("Seeding Teachers & HR Profiles...")
         teachers = [
-            Teacher(name="Verma Sir (Maths)", email="verma@school.com", phone="9898012345", assigned_class="7th", assigned_section="B", status="Active", password="teacher123"),
-            Teacher(name="Patil Teacher (Science)", email="patil@school.com", phone="9898012346", assigned_class="9th", assigned_section="C", status="Active", password="teacher123"),
-            Teacher(name="Desai Sir (English)", email="desai@school.com", phone="9898012347", assigned_class="11th", assigned_section="A", status="Active", password="teacher123")
+            Teacher(name="Verma Sir (Maths)", email="verma@school.com", phone="9898012345", assigned_class="7th", assigned_section="B", status="Active", password_hash=get_password_hash("teacher123")),
+            Teacher(name="Patil Teacher (Science)", email="patil@school.com", phone="9898012346", assigned_class="9th", assigned_section="C", status="Active", password_hash=get_password_hash("teacher123")),
+            Teacher(name="Desai Sir (English)", email="desai@school.com", phone="9898012347", assigned_class="11th", assigned_section="A", status="Active", password_hash=get_password_hash("teacher123"))
         ]
         db.add_all(teachers)
         db.commit()

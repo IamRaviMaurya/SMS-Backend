@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Float, DateTime, ForeignKey, Text
+from sqlalchemy import Column, Integer, String, Float, DateTime, ForeignKey, Text, UniqueConstraint
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from app.core.database import Base
@@ -23,6 +23,9 @@ class FeeStructure(Base, TenantMixin):
 
 class FeePayment(Base, TenantMixin):
     __tablename__ = "fee_payments"
+    __table_args__ = (
+        UniqueConstraint("tenant_id", "receipt_no", name="ux_fee_payments_tenant_receipt_no"),
+    )
 
     id = Column(Integer, primary_key=True, index=True)
     receipt_no = Column(String(50), index=True, nullable=False)  # REC-2026-0001
@@ -46,7 +49,7 @@ class FeePayment(Base, TenantMixin):
     details = relationship("PaymentDetail", back_populates="payment", cascade="all, delete-orphan")
 
 
-class PaymentDetail(Base):
+class PaymentDetail(Base, TenantMixin):
     __tablename__ = "payment_details"
 
     id = Column(Integer, primary_key=True, index=True)

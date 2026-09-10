@@ -1,0 +1,24 @@
+services:
+  - type: web
+    name: sms-backend-api
+    env: python
+    buildCommand: pip install -r requirements.txt && python migrate_multi_tenant.py
+    startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: ENV
+        value: production
+      - key: SECRET_KEY
+        generateValue: true
+      - key: DATABASE_URL
+        value: sqlite:///./school.db
+      # Comma-separated browser origins allowed to call the API (never "*" in production)
+      - key: CORS_ORIGINS
+        value: https://your-frontend-domain.example.com
+      # Optional: enables <slug>.<root-domain> tenant resolution for the login page
+      - key: TENANT_ROOT_DOMAIN
+        value: ""
+      # Bootstrap platform operator (used by migrate/seed only; change after first login)
+      - key: SUPER_ADMIN_EMAIL
+        sync: false
+      - key: SUPER_ADMIN_PASSWORD
+        sync: false

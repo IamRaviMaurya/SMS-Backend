@@ -12,11 +12,11 @@ class TeacherBase(BaseModel):
     status: Optional[str] = "Active"
 
 class TeacherCreate(TeacherBase):
-    password: Optional[str] = "teacher123"
+    # Optional on update (keeps the existing password); required to enable login on create.
+    password: Optional[str] = Field(default=None, min_length=6, max_length=128)
 
 class TeacherResponse(TeacherBase):
     id: int
-    password: Optional[str] = "teacher123"
 
     class Config:
         from_attributes = True

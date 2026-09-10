@@ -3,6 +3,7 @@ import uuid
 from sqlalchemy import Column, String, DateTime, Enum, Integer, Text, ForeignKey
 from sqlalchemy.orm import declared_attr
 from sqlalchemy.sql import func
+from datetime import datetime, timezone
 from app.core.database import Base
 
 
@@ -47,6 +48,19 @@ class Tenant(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
 
+    @property
+    def is_subscription_expired(self) -> bool:
+        if not self.subscription_expires_at:
+            return False
+        expires = self.subscription_expires_at
+        if expires.tzinfo is None:
+            expires = expires.replace(tzinfo=timezone.utc)
+        return expires < datetime.now(timezone.utc)
+
+    @property
+    def is_active(self) -> bool:
+        return self.status == TenantStatus.VERIFIED and not self.is_subscription_expired
+
 
 class TenantMixin:
     """Inherit this mixin on all tenant-isolated SQLAlchemy models."""
@@ -56,6 +70,5 @@ class TenantMixin:
             String(50),
             ForeignKey("tenants.id", ondelete="CASCADE"),
             nullable=False,
-            default="default-tenant-001",
             index=True
         )

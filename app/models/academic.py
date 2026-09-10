@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Float, ForeignKey, DateTime, Date
+from sqlalchemy import Column, Integer, String, Float, ForeignKey, DateTime, Date, UniqueConstraint
 from sqlalchemy.orm import relationship
 from datetime import datetime
 from app.core.database import Base
@@ -7,6 +7,9 @@ from app.models.tenant import TenantMixin
 
 class Teacher(Base, TenantMixin):
     __tablename__ = "teachers"
+    __table_args__ = (
+        UniqueConstraint("tenant_id", "email", name="ux_teachers_tenant_email"),
+    )
 
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String(100), nullable=False)
@@ -15,7 +18,7 @@ class Teacher(Base, TenantMixin):
     assigned_class = Column(String(50))  # e.g., "7th"
     assigned_section = Column(String(10)) # e.g., "A"
     status = Column(String(20), default="Active") # Active, Inactive
-    password = Column(String(100), default="teacher123")
+    password_hash = Column(String(255), nullable=True)  # bcrypt hash; NULL = login disabled
 
 
 class Attendance(Base, TenantMixin):

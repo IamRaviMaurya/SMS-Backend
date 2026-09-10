@@ -1,38 +1,15 @@
-import contextvars
-from typing import Optional
-from fastapi import Request
-from starlette.middleware.base import BaseHTTPMiddleware
+"""
+Backward-compatibility shim.
 
-# Thread-safe global request tenant context
-_tenant_context: contextvars.ContextVar[Optional[str]] = contextvars.ContextVar("tenant_id", default=None)
-
-
-def get_current_tenant_id() -> Optional[str]:
-    return _tenant_context.get()
-
-
-def set_current_tenant_id(tenant_id: Optional[str]):
-    _tenant_context.set(tenant_id)
-
-
-class TenantResolutionMiddleware(BaseHTTPMiddleware):
-    async def dispatch(self, request: Request, call_next):
-        tenant_id = None
-
-        # 1. Resolve from X-Tenant-ID Header
-        header_tenant = request.headers.get("X-Tenant-ID")
-        if header_tenant:
-            tenant_id = header_tenant
-
-        # 2. Fallback to Subdomain (e.g. greenwood.sms.com -> greenwood)
-        elif request.headers.get("host"):
-            host = request.headers.get("host").split(":")[0]
-            parts = host.split(".")
-            if len(parts) > 2 and parts[0] not in ["www", "api", "app", "localhost"]:
-                tenant_id = parts[0]  # Slug identifier
-
-        set_current_tenant_id(tenant_id)
-        request.state.tenant_id = tenant_id
-
-        response = await call_next(request)
-        return response
+The old TenantResolutionMiddleware trusted the X-Tenant-ID header from the client,
+which allowed any caller to read another school's data. Tenant resolution now lives
+in app.core.security.TenantAuthGuard (derived from the JWT) and the scoping helpers
+live in app.core.tenancy. This module only re-exports them so existing imports work.
+"""
+from app.core.tenancy import (  # noqa: F401
+    get_current_tenant_id,
+    set_current_tenant_id,
+    require_tenant_id,
+    tenant_scope,
+    bypass_tenant_scope,
+)

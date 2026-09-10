@@ -1,14 +1,45 @@
 from sqlalchemy.orm import Session
 from sqlalchemy import or_, func
 from datetime import datetime
+from typing import Optional, List
 from app.models.student import Student
 from app.schemas.student import StudentCreate, StudentUpdate
+from app.core.tenancy import require_tenant_id
+from app.models.tenant import Tenant
+
+
+class StudentLimitReached(Exception):
+    pass
+
+
+class DuplicateGrNumber(Exception):
+    pass
+
+
+def _scoped_query(db: Session):
+    """
+    Explicit tenant predicate (defence in depth). app.core.tenancy also injects the
+    same predicate automatically into every query, and raises if no tenant is active.
+    """
+    return db.query(Student).filter(Student.tenant_id == require_tenant_id())
+
+
+def _enforce_student_limit(db: Session, tenant_id: str) -> None:
+    tenant = db.query(Tenant).filter(Tenant.id == tenant_id).first()
+    limit = tenant.student_limit if tenant else None
+    if limit and limit > 0:
+        active = _scoped_query(db).filter(Student.status == "Active").count()
+        if active >= limit:
+            raise StudentLimitReached(
+                f"Student limit of {limit} reached for the current subscription plan. Upgrade to add more students."
+            )
+
 
 def generate_gr_number(db: Session, academic_year: str = "2026-2027") -> str:
     year = academic_year.split("-")[0]
     prefix = f"GR-{year}-"
     
-    last_student = db.query(Student).filter(Student.gr_no.like(f"{prefix}%")).order_by(Student.id.desc()).first()
+    last_student = _scoped_query(db).filter(Student.gr_no.like(f"{prefix}%")).order_by(Student.id.desc()).first()
     if not last_student:
         return f"{prefix}0001"
     
@@ -17,8 +48,9 @@ def generate_gr_number(db: Session, academic_year: str = "2026-2027") -> str:
         new_num = last_num + 1
         return f"{prefix}{new_num:04d}"
     except ValueError:
-        total_count = db.query(Student).count() + 1
+        total_count = _scoped_query(db).count() + 1
         return f"{prefix}{total_count:04d}"
+
 
 def create_student(db: Session, student_in: StudentCreate) -> Student:
     if not student_in.gr_no:
@@ -31,8 +63,13 @@ def create_student(db: Session, student_in: StudentCreate) -> Student:
     full_name = " ".join(full_name_parts)
 
     parent_name = f"{student_in.middle_name or student_in.first_name} {student_in.last_name}"
+    active_tenant = require_tenant_id()
+    _enforce_student_limit(db, active_tenant)
+    if _scoped_query(db).filter(Student.gr_no == student_in.gr_no).first():
+        raise DuplicateGrNumber(f"GR number {student_in.gr_no} already exists in this school")
 
     student = Student(
+        tenant_id=active_tenant,
         gr_no=student_in.gr_no,
         last_name=student_in.last_name,
         first_name=student_in.first_name,
@@ -66,6 +103,7 @@ def create_student(db: Session, student_in: StudentCreate) -> Student:
     db.refresh(student)
     return student
 
+
 def count_students(
     db: Session,
     search: Optional[str] = None,
@@ -75,7 +113,7 @@ def count_students(
     stream: Optional[str] = None,
     status: Optional[str] = None
 ) -> int:
-    query = db.query(Student)
+    query = _scoped_query(db)
     if search:
         term = f"%{search}%"
         query = query.filter(
@@ -100,6 +138,7 @@ def count_students(
         
     return query.count()
 
+
 def get_students(
     db: Session,
     search: Optional[str] = None,
@@ -111,7 +150,7 @@ def get_students(
     skip: int = 0,
     limit: int = 100
 ) -> List[Student]:
-    query = db.query(Student)
+    query = _scoped_query(db)
     if search:
         term = f"%{search}%"
         query = query.filter(
@@ -136,14 +175,17 @@ def get_students(
         
     return query.order_by(Student.id.desc()).offset(skip).limit(limit).all()
 
+
 def get_student_by_gr(db: Session, gr_no: str) -> Student:
-    return db.query(Student).filter(Student.gr_no == gr_no).first()
+    return _scoped_query(db).filter(Student.gr_no == gr_no).first()
+
 
 def get_student_by_id(db: Session, student_id: int) -> Student:
-    return db.query(Student).filter(Student.id == student_id).first()
+    return _scoped_query(db).filter(Student.id == student_id).first()
+
 
 def update_student(db: Session, student_id: int, student_in: StudentUpdate) -> Student:
-    student = db.query(Student).filter(Student.id == student_id).first()
+    student = _scoped_query(db).filter(Student.id == student_id).first()
     if not student:
         return None
 
@@ -164,6 +206,7 @@ def update_student(db: Session, student_id: int, student_in: StudentUpdate) -> S
     db.commit()
     db.refresh(student)
     return student
+
 
 def get_student_full_ledger(db: Session, identifier: str):
     if str(identifier).isdigit():
@@ -200,8 +243,9 @@ def get_student_full_ledger(db: Session, identifier: str):
         "pending_balance": pending_balance
     }
 
+
 def get_student_count_breakdown(db: Session, academic_year: Optional[str] = "2026-2027"):
-    query = db.query(Student).filter(Student.status == "Active")
+    query = _scoped_query(db).filter(Student.status == "Active")
     if academic_year and academic_year != "All":
         query = query.filter(Student.academic_year == academic_year)
         

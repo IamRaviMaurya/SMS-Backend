@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Text, Float, DateTime
+from sqlalchemy import Column, Integer, String, Text, Float, DateTime, UniqueConstraint
 from sqlalchemy.sql import func
 from app.core.database import Base
 from app.models.tenant import TenantMixin
@@ -6,6 +6,9 @@ from app.models.tenant import TenantMixin
 
 class Student(Base, TenantMixin):
     __tablename__ = "students"
+    __table_args__ = (
+        UniqueConstraint("tenant_id", "gr_no", name="ux_students_tenant_gr_no"),
+    )
 
     id = Column(Integer, primary_key=True, index=True)
     gr_no = Column(String(50), index=True, nullable=False)

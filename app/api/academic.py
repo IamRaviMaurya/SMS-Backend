@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 from typing import List, Optional
 from app.core.database import get_db
+from app.core.security import AdminGuard, StaffGuard, TenantAuthGuard, get_password_hash
 from app.models.academic import (
     Teacher, Attendance, StudentLeave, Homework, LessonPlan,
     ExamMark, CoCurricular, Notice, TeacherLeave, TeacherTimetable
@@ -15,14 +16,16 @@ from app.schemas.academic import (
     TeacherLeaveResponse, TeacherLeaveCreate, TeacherTimetableResponse
 )
 
-router = APIRouter(prefix="/academic", tags=["Academic & HR Management"])
+# Every route requires an authenticated tenant user. Tenant filtering of all queries
+# below is enforced centrally by app.core.tenancy (auto tenant_id predicate + write guard).
+router = APIRouter(prefix="/academic", tags=["Academic & HR Management"], dependencies=[Depends(TenantAuthGuard)])
 
 # --- Teachers ---
 @router.get("/teachers/all", response_model=List[TeacherResponse])
 def get_all_teachers(db: Session = Depends(get_db)):
     return db.query(Teacher).all()
 
-@router.post("/teachers/create", response_model=TeacherResponse)
+@router.post("/teachers/create", response_model=TeacherResponse, dependencies=[Depends(AdminGuard)])
 def create_teacher(payload: TeacherCreate, db: Session = Depends(get_db)):
     existing = db.query(Teacher).filter(Teacher.email == payload.email).first()
     if existing:
@@ -35,14 +38,14 @@ def create_teacher(payload: TeacherCreate, db: Session = Depends(get_db)):
         assigned_class=payload.assigned_class,
         assigned_section=payload.assigned_section,
         status=payload.status,
-        password=payload.password or "teacher123"
+        password_hash=get_password_hash(payload.password) if payload.password else None,
     )
     db.add(new_teacher)
     db.commit()
     db.refresh(new_teacher)
     return new_teacher
 
-@router.put("/teachers/{teacher_id}/update", response_model=TeacherResponse)
+@router.put("/teachers/{teacher_id}/update", response_model=TeacherResponse, dependencies=[Depends(AdminGuard)])
 def update_teacher(teacher_id: int, payload: TeacherCreate, db: Session = Depends(get_db)):
     teacher = db.query(Teacher).filter(Teacher.id == teacher_id).first()
     if not teacher:
@@ -60,13 +63,13 @@ def update_teacher(teacher_id: int, payload: TeacherCreate, db: Session = Depend
     teacher.assigned_section = payload.assigned_section
     teacher.status = payload.status
     if payload.password:
-        teacher.password = payload.password
+        teacher.password_hash = get_password_hash(payload.password)
         
     db.commit()
     db.refresh(teacher)
     return teacher
 
-@router.delete("/teachers/{teacher_id}/delete")
+@router.delete("/teachers/{teacher_id}/delete", dependencies=[Depends(AdminGuard)])
 def delete_teacher(teacher_id: int, db: Session = Depends(get_db)):
     teacher = db.query(Teacher).filter(Teacher.id == teacher_id).first()
     if not teacher:
@@ -118,7 +121,7 @@ def get_attendance(
         )
     return results
 
-@router.post("/attendance/bulk")
+@router.post("/attendance/bulk", dependencies=[Depends(StaffGuard)])
 def mark_attendance_bulk(payload: AttendanceBulkCreate, db: Session = Depends(get_db)):
     saved = 0
     for rec in payload.records:
@@ -233,7 +236,7 @@ def apply_student_leave(payload: StudentLeaveCreate, db: Session = Depends(get_d
     db.refresh(new_leave)
     return new_leave
 
-@router.put("/student-leaves/{leave_id}/status")
+@router.put("/student-leaves/{leave_id}/status", dependencies=[Depends(StaffGuard)])
 def update_student_leave_status(
     leave_id: int,
     status: str = Query(..., description="APPROVED or REJECTED"),
@@ -265,7 +268,7 @@ def get_homework(
         query = query.filter(Homework.section == section)
     return query.order_by(Homework.id.desc()).all()
 
-@router.post("/homework", response_model=HomeworkResponse)
+@router.post("/homework", response_model=HomeworkResponse, dependencies=[Depends(StaffGuard)])
 def upload_homework(payload: HomeworkCreate, db: Session = Depends(get_db)):
     new_hw = Homework(**payload.model_dump())
     db.add(new_hw)
@@ -287,7 +290,7 @@ def get_lesson_plans(
         query = query.filter(LessonPlan.subject == subject)
     return query.order_by(LessonPlan.id.desc()).all()
 
-@router.post("/lesson-plan", response_model=LessonPlanResponse)
+@router.post("/lesson-plan", response_model=LessonPlanResponse, dependencies=[Depends(StaffGuard)])
 def create_lesson_plan(payload: LessonPlanCreate, db: Session = Depends(get_db)):
     new_plan = LessonPlan(**payload.model_dump())
     db.add(new_plan)
@@ -295,7 +298,7 @@ def create_lesson_plan(payload: LessonPlanCreate, db: Session = Depends(get_db))
     db.refresh(new_plan)
     return new_plan
 
-@router.put("/lesson-plan/{plan_id}/progress")
+@router.put("/lesson-plan/{plan_id}/progress", dependencies=[Depends(StaffGuard)])
 def update_lesson_progress(
     plan_id: int,
     progress: int = Query(..., ge=0, le=100),
@@ -371,7 +374,7 @@ def get_student_marks(student_id: int, db: Session = Depends(get_db)):
         )
     return results
 
-@router.post("/marks/bulk")
+@router.post("/marks/bulk", dependencies=[Depends(StaffGuard)])
 def save_exam_marks_bulk(payload: ExamMarkBulkCreate, db: Session = Depends(get_db)):
     saved = 0
     for rec in payload.records:
@@ -410,7 +413,7 @@ def get_student_co_curricular(student_id: int, db: Session = Depends(get_db)):
         return res
     return None
 
-@router.post("/co-curricular", response_model=CoCurricularResponse)
+@router.post("/co-curricular", response_model=CoCurricularResponse, dependencies=[Depends(StaffGuard)])
 def save_co_curricular(payload: CoCurricularCreate, db: Session = Depends(get_db)):
     rec = db.query(CoCurricular).filter(CoCurricular.student_id == payload.student_id).first()
     if rec:
@@ -451,7 +454,7 @@ def get_notices(
         query = query.filter(Notice.target_type == target_type)
     return query.order_by(Notice.id.desc()).all()
 
-@router.post("/notices", response_model=NoticeResponse)
+@router.post("/notices", response_model=NoticeResponse, dependencies=[Depends(StaffGuard)])
 def broadcast_notice(payload: NoticeCreate, db: Session = Depends(get_db)):
     new_notice = Notice(**payload.model_dump())
     db.add(new_notice)
@@ -459,7 +462,7 @@ def broadcast_notice(payload: NoticeCreate, db: Session = Depends(get_db)):
     db.refresh(new_notice)
     return new_notice
 
-@router.put("/notices/{notice_id}", response_model=NoticeResponse)
+@router.put("/notices/{notice_id}", response_model=NoticeResponse, dependencies=[Depends(StaffGuard)])
 def update_notice(notice_id: int, payload: NoticeCreate, db: Session = Depends(get_db)):
     notice = db.query(Notice).filter(Notice.id == notice_id).first()
     if not notice:
@@ -476,7 +479,7 @@ def update_notice(notice_id: int, payload: NoticeCreate, db: Session = Depends(g
     db.refresh(notice)
     return notice
 
-@router.delete("/notices/{notice_id}")
+@router.delete("/notices/{notice_id}", dependencies=[Depends(StaffGuard)])
 def delete_notice(notice_id: int, db: Session = Depends(get_db)):
     notice = db.query(Notice).filter(Notice.id == notice_id).first()
     if not notice:
@@ -501,7 +504,7 @@ def get_teacher_leaves(teacher_id: int, db: Session = Depends(get_db)):
         results.append(res)
     return results
 
-@router.post("/teachers/leaves", response_model=TeacherLeaveResponse)
+@router.post("/teachers/leaves", response_model=TeacherLeaveResponse, dependencies=[Depends(StaffGuard)])
 def apply_teacher_leave(payload: TeacherLeaveCreate, db: Session = Depends(get_db)):
     new_leave = TeacherLeave(**payload.model_dump())
     db.add(new_leave)

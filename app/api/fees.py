@@ -13,8 +13,10 @@ from app.schemas.fee import (
 from app.models.fee import FeePayment, FeeStructure
 from app.models.student import Student
 from app.services import fee_service
+from app.core.security import AdminGuard, TenantAuthGuard
 
-router = APIRouter(prefix="/fees", tags=["Fees"])
+# All fee routes require an authenticated tenant user; mutations additionally require an admin.
+router = APIRouter(prefix="/fees", tags=["Fees"], dependencies=[Depends(TenantAuthGuard)])
 
 
 # ─────────────────────────────────────────────
@@ -30,13 +32,13 @@ def get_all_structures(
     return fee_service.get_all_fee_structures(db, division=division)
 
 
-@router.post("/structures", response_model=FeeStructureResponse)
+@router.post("/structures", response_model=FeeStructureResponse, dependencies=[Depends(AdminGuard)])
 def create_structure(fee_in: FeeStructureCreate, db: Session = Depends(get_db)):
     """Create a single fee structure head."""
     return fee_service.create_fee_structure(db, fee_in)
 
 
-@router.post("/structures/bulk", response_model=List[FeeStructureResponse])
+@router.post("/structures/bulk", response_model=List[FeeStructureResponse], dependencies=[Depends(AdminGuard)])
 def bulk_create_structures(bulk_in: BulkFeeStructureCreate, db: Session = Depends(get_db)):
     """
     Bulk create multiple fee structure heads in a single request.
@@ -45,7 +47,7 @@ def bulk_create_structures(bulk_in: BulkFeeStructureCreate, db: Session = Depend
     return fee_service.bulk_create_fee_structures(db, bulk_in)
 
 
-@router.put("/structures/{structure_id}", response_model=FeeStructureResponse)
+@router.put("/structures/{structure_id}", response_model=FeeStructureResponse, dependencies=[Depends(AdminGuard)])
 def update_structure(
     structure_id: int,
     fee_in: FeeStructureUpdate,
@@ -58,7 +60,7 @@ def update_structure(
     return updated
 
 
-@router.delete("/structures/{structure_id}")
+@router.delete("/structures/{structure_id}", dependencies=[Depends(AdminGuard)])
 def delete_structure(structure_id: int, db: Session = Depends(get_db)):
     """Delete a fee structure head."""
     deleted = fee_service.delete_fee_structure(db, structure_id)
@@ -80,7 +82,7 @@ def get_student_fee_structures(student_id: int, db: Session = Depends(get_db)):
 # Fee Collection
 # ─────────────────────────────────────────────
 
-@router.post("/collect", response_model=FeeReceiptResponse)
+@router.post("/collect", response_model=FeeReceiptResponse, dependencies=[Depends(AdminGuard)])
 def collect_fee(collect_in: FeeCollectCreate, db: Session = Depends(get_db)):
     """
     Fee Collection Desk API:
@@ -151,7 +153,7 @@ def get_student_payment_history(student_id: int, db: Session = Depends(get_db)):
     return history
 
 
-@router.delete("/payments/{payment_id}", response_model=DeletePaymentResponse)
+@router.delete("/payments/{payment_id}", response_model=DeletePaymentResponse, dependencies=[Depends(AdminGuard)])
 def delete_payment(payment_id: int, db: Session = Depends(get_db)):
     """
     Admin override: Delete a wrong/duplicate payment entry.
@@ -173,6 +175,7 @@ def get_fee_stats(
     db: Session = Depends(get_db),
 ):
     """Dashboard stats: total collected, pending, receipts, defaulter count."""
+    # Tenant filtering is applied automatically by app.core.tenancy for every query below.
     student_query = db.query(Student).filter(Student.status == "Active")
     if academic_year and academic_year != "All":
         student_query = student_query.filter(Student.academic_year == academic_year)
@@ -236,7 +239,7 @@ def get_advance_balance(student_id: int, db: Session = Depends(get_db)):
     return result
 
 
-@router.post("/advance/add", response_model=AdvanceCreditResponse)
+@router.post("/advance/add", response_model=AdvanceCreditResponse, dependencies=[Depends(AdminGuard)])
 def add_advance_credit(advance_in: AdvanceCreditAdd, db: Session = Depends(get_db)):
     """
     Add advance credit to a student's account.

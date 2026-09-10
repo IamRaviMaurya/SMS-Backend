@@ -11,8 +11,14 @@ from app.api import auth_router, students_router, fees_router, academic_router, 
 from app.services import student_service
 import app.models  # Ensure models are registered and tenant-scoping hooks are installed
 
-# Create database tables
+# Create database tables and ensure multi-tenant seed & migration
 Base.metadata.create_all(bind=engine)
+try:
+    from migrate_multi_tenant import migrate
+    migrate()
+except Exception as _e:
+    print(f"Startup migration note: {_e}")
+
 
 app = FastAPI(
     title=settings.PROJECT_NAME,

@@ -19,31 +19,40 @@ MONTHS = [
     "February 2027", "March 2027", "April 2027", "May 2027"
 ]
 
-def seed_database():
-    # Re-create database schema with updated Student model
-    Base.metadata.drop_all(bind=engine)
-    Base.metadata.create_all(bind=engine)
+def seed_database(force: bool = False):
     db = SessionLocal()
-
-    # Everything seeded below belongs to the default school. The tenant-scoping hooks
-    # stamp tenant_id on every row and refuse to write without an active tenant.
-    set_current_tenant_id(DEFAULT_TENANT_ID)
-
     try:
+        # Check if DB is already seeded
+        if not force:
+            existing = db.query(User).filter(User.role == "SUPER_ADMIN").first()
+            if existing:
+                print("Database already contains Super Admin. Skipping seed.")
+                return
+
+        if force:
+            Base.metadata.drop_all(bind=engine)
+        Base.metadata.create_all(bind=engine)
+
+        # Everything seeded below belongs to the default school.
+        set_current_tenant_id(DEFAULT_TENANT_ID)
+
         print("Seeding Default Tenant & Login Accounts...")
-        db.add(Tenant(
-            id=DEFAULT_TENANT_ID, school_name="Avdhoot Bhagwan Ram Vidyalaya", slug="main",
-            contact_email="admin@school.com", contact_phone="7276669858",
-            status=TenantStatus.VERIFIED, subscription_plan=SubscriptionPlan.PREMIUM, student_limit=5000,
-        ))
-        db.add(User(
-            email=settings.SUPER_ADMIN_EMAIL.lower(), password_hash=get_password_hash(settings.SUPER_ADMIN_PASSWORD),
-            role="SUPER_ADMIN", full_name="Platform Super Admin", tenant_id=None,
-        ))
-        db.add(User(
-            email="admin@school.com", password_hash=get_password_hash("admin123"),
-            role="SCHOOL_ADMIN", full_name="Principal / Accounts Administrator", tenant_id=DEFAULT_TENANT_ID,
-        ))
+        if not db.query(Tenant).filter(Tenant.id == DEFAULT_TENANT_ID).first():
+            db.add(Tenant(
+                id=DEFAULT_TENANT_ID, school_name="Avdhoot Bhagwan Ram Vidyalaya", slug="main",
+                contact_email="admin@school.com", contact_phone="7276669858",
+                status=TenantStatus.VERIFIED, subscription_plan=SubscriptionPlan.PREMIUM, student_limit=5000,
+            ))
+        if not db.query(User).filter(User.email == settings.SUPER_ADMIN_EMAIL.lower()).first():
+            db.add(User(
+                email=settings.SUPER_ADMIN_EMAIL.lower(), password_hash=get_password_hash(settings.SUPER_ADMIN_PASSWORD),
+                role="SUPER_ADMIN", full_name="Platform Super Admin", tenant_id=None,
+            ))
+        if not db.query(User).filter(User.email == "admin@school.com").first():
+            db.add(User(
+                email="admin@school.com", password_hash=get_password_hash("admin123"),
+                role="SCHOOL_ADMIN", full_name="Principal / Accounts Administrator", tenant_id=DEFAULT_TENANT_ID,
+            ))
         db.commit()
 
         print("Seeding Monthly & Annual Fee Structures across Academic Divisions...")

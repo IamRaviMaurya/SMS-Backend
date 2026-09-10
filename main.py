@@ -14,10 +14,11 @@ import app.models  # Ensure models are registered and tenant-scoping hooks are i
 # Create database tables and ensure multi-tenant seed & migration
 Base.metadata.create_all(bind=engine)
 try:
-    from migrate_multi_tenant import migrate
-    migrate()
+    from seed import seed_database
+    seed_database(force=False)
 except Exception as _e:
-    print(f"Startup migration note: {_e}")
+    print(f"Startup seed note: {_e}")
+
 
 
 app = FastAPI(

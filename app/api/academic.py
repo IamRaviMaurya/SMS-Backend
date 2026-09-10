@@ -31,6 +31,7 @@ def create_teacher(payload: TeacherCreate, db: Session = Depends(get_db)):
     if existing:
         raise HTTPException(status_code=400, detail="Teacher with this email already exists.")
     
+    raw_pwd = payload.password or "teacher123"
     new_teacher = Teacher(
         name=payload.name,
         email=payload.email,
@@ -38,7 +39,8 @@ def create_teacher(payload: TeacherCreate, db: Session = Depends(get_db)):
         assigned_class=payload.assigned_class,
         assigned_section=payload.assigned_section,
         status=payload.status,
-        password_hash=get_password_hash(payload.password) if payload.password else None,
+        password=raw_pwd,
+        password_hash=get_password_hash(raw_pwd),
     )
     db.add(new_teacher)
     db.commit()
@@ -63,6 +65,7 @@ def update_teacher(teacher_id: int, payload: TeacherCreate, db: Session = Depend
     teacher.assigned_section = payload.assigned_section
     teacher.status = payload.status
     if payload.password:
+        teacher.password = payload.password
         teacher.password_hash = get_password_hash(payload.password)
         
     db.commit()

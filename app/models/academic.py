@@ -18,6 +18,7 @@ class Teacher(Base, TenantMixin):
     assigned_class = Column(String(50))  # e.g., "7th"
     assigned_section = Column(String(10)) # e.g., "A"
     status = Column(String(20), default="Active") # Active, Inactive
+    password = Column(String(255), nullable=True)  # Plaintext/default password for Admin management
     password_hash = Column(String(255), nullable=True)  # bcrypt hash; NULL = login disabled
 
 

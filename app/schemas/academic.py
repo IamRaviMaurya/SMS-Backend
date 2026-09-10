@@ -17,6 +17,7 @@ class TeacherCreate(TeacherBase):
 
 class TeacherResponse(TeacherBase):
     id: int
+    password: Optional[str] = None
 
     class Config:
         from_attributes = True

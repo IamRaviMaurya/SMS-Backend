@@ -3,6 +3,7 @@ import os
 
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
+from sqlalchemy.sql import func
 from app.core.database import SessionLocal, engine, Base
 from app.core.config import settings
 from app.core.security import get_password_hash
@@ -43,16 +44,25 @@ def seed_database(force: bool = False):
                 contact_email="admin@school.com", contact_phone="7276669858",
                 status=TenantStatus.VERIFIED, subscription_plan=SubscriptionPlan.PREMIUM, student_limit=5000,
             ))
-        if not db.query(User).filter(User.email == settings.SUPER_ADMIN_EMAIL.lower()).first():
+
+        super_admin = db.query(User).filter(func.lower(User.email) == settings.SUPER_ADMIN_EMAIL.lower()).first()
+        if not super_admin:
             db.add(User(
                 email=settings.SUPER_ADMIN_EMAIL.lower(), password_hash=get_password_hash(settings.SUPER_ADMIN_PASSWORD),
                 role="SUPER_ADMIN", full_name="Platform Super Admin", tenant_id=None,
             ))
-        if not db.query(User).filter(User.email == "admin@school.com").first():
+        else:
+            super_admin.password_hash = get_password_hash(settings.SUPER_ADMIN_PASSWORD)
+
+        school_admin = db.query(User).filter(func.lower(User.email) == "admin@school.com").first()
+        if not school_admin:
             db.add(User(
                 email="admin@school.com", password_hash=get_password_hash("admin123"),
                 role="SCHOOL_ADMIN", full_name="Principal / Accounts Administrator", tenant_id=DEFAULT_TENANT_ID,
             ))
+        else:
+            school_admin.password_hash = get_password_hash("admin123")
+
         db.commit()
 
         print("Seeding Monthly & Annual Fee Structures across Academic Divisions...")

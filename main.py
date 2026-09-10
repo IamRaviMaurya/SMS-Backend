@@ -4,7 +4,8 @@ from sqlalchemy.orm import Session
 from typing import Optional, List
 from app.core.config import settings
 from app.core.database import engine, Base, get_db
-from app.api import auth_router, students_router, fees_router, academic_router
+from app.core.tenant_middleware import TenantResolutionMiddleware
+from app.api import auth_router, students_router, fees_router, academic_router, super_admin_router
 from app.services import student_service
 import app.models # Ensure models are registered
 
@@ -16,6 +17,9 @@ app = FastAPI(
     version=settings.VERSION,
     openapi_url=f"{settings.API_V1_STR}/openapi.json"
 )
+
+# Register Tenant Resolution Middleware
+app.add_middleware(TenantResolutionMiddleware)
 
 # Configure CORS for Next.js frontend
 app.add_middleware(
@@ -31,6 +35,8 @@ app.include_router(auth_router, prefix=settings.API_V1_STR)
 app.include_router(students_router, prefix=settings.API_V1_STR)
 app.include_router(fees_router, prefix=settings.API_V1_STR)
 app.include_router(academic_router, prefix=settings.API_V1_STR)
+app.include_router(super_admin_router, prefix=settings.API_V1_STR)
+
 
 # --- Backward-Compatibility Aliases ---
 @app.get(f"{settings.API_V1_STR}/admission/students")
@@ -61,11 +67,11 @@ def get_admission_students_alias(
             "email": s.email,
             "dob": s.dob,
             "gender": s.gender,
-            "blood_group": s.blood_group,
+            "blood_group": getattr(s, "blood_group", None),
             "division": s.division,
             "standard": s.standard,
             "section": s.section,
-            "roll_no": s.roll_no,
+            "roll_no": getattr(s, "roll_no", None),
             "status": s.status
         }
         for s in students
@@ -74,7 +80,7 @@ def get_admission_students_alias(
 @app.get("/")
 def root():
     return {
-        "message": "Welcome to Indian School Management System API",
+        "message": "Welcome to Multi-Tenant School Management System API",
         "version": settings.VERSION,
         "docs": "/docs"
     }

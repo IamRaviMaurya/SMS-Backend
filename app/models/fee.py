@@ -2,9 +2,10 @@ from sqlalchemy import Column, Integer, String, Float, DateTime, ForeignKey, Tex
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from app.core.database import Base
+from app.models.tenant import TenantMixin
 
 
-class FeeStructure(Base):
+class FeeStructure(Base, TenantMixin):
     __tablename__ = "fee_structures"
 
     id = Column(Integer, primary_key=True, index=True)
@@ -20,11 +21,11 @@ class FeeStructure(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
 
-class FeePayment(Base):
+class FeePayment(Base, TenantMixin):
     __tablename__ = "fee_payments"
 
     id = Column(Integer, primary_key=True, index=True)
-    receipt_no = Column(String(50), unique=True, index=True, nullable=False)  # REC-2026-0001
+    receipt_no = Column(String(50), index=True, nullable=False)  # REC-2026-0001
     student_id = Column(Integer, ForeignKey("students.id"), nullable=False)
     payment_date = Column(String(20), nullable=False)     # YYYY-MM-DD
     payment_mode = Column(String(50), nullable=False)     # Cash, UPI, Cheque, NetBanking, Razorpay
@@ -58,7 +59,7 @@ class PaymentDetail(Base):
     payment = relationship("FeePayment", back_populates="details")
 
 
-class AdvanceCredit(Base):
+class AdvanceCredit(Base, TenantMixin):
     """Tracks advance credits added to a student's account."""
     __tablename__ = "advance_credits"
 

@@ -2,20 +2,23 @@ from sqlalchemy import Column, Integer, String, Float, ForeignKey, DateTime, Dat
 from sqlalchemy.orm import relationship
 from datetime import datetime
 from app.core.database import Base
+from app.models.tenant import TenantMixin
 
-class Teacher(Base):
+
+class Teacher(Base, TenantMixin):
     __tablename__ = "teachers"
 
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String(100), nullable=False)
-    email = Column(String(100), unique=True, index=True)
+    email = Column(String(100), index=True)
     phone = Column(String(20), nullable=False)
     assigned_class = Column(String(50))  # e.g., "7th"
     assigned_section = Column(String(10)) # e.g., "A"
     status = Column(String(20), default="Active") # Active, Inactive
     password = Column(String(100), default="teacher123")
 
-class Attendance(Base):
+
+class Attendance(Base, TenantMixin):
     __tablename__ = "attendance"
 
     id = Column(Integer, primary_key=True, index=True)
@@ -25,7 +28,8 @@ class Attendance(Base):
     lecture_no = Column(Integer, default=0) # 0 means full-day attendance
     marked_by_teacher_id = Column(Integer, ForeignKey("teachers.id"), nullable=True)
 
-class StudentLeave(Base):
+
+class StudentLeave(Base, TenantMixin):
     __tablename__ = "student_leaves"
 
     id = Column(Integer, primary_key=True, index=True)
@@ -36,7 +40,8 @@ class StudentLeave(Base):
     status = Column(String(20), default="PENDING") # PENDING, APPROVED, REJECTED
     actioned_by = Column(String(100)) # Admin or Teacher name
 
-class Homework(Base):
+
+class Homework(Base, TenantMixin):
     __tablename__ = "homework"
 
     id = Column(Integer, primary_key=True, index=True)
@@ -50,7 +55,8 @@ class Homework(Base):
     deadline = Column(String(20), nullable=False) # YYYY-MM-DD
     created_at = Column(DateTime, default=datetime.utcnow)
 
-class LessonPlan(Base):
+
+class LessonPlan(Base, TenantMixin):
     __tablename__ = "lesson_plans"
 
     id = Column(Integer, primary_key=True, index=True)
@@ -61,7 +67,8 @@ class LessonPlan(Base):
     status = Column(String(20), default="IN_PROGRESS") # IN_PROGRESS, COMPLETED
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
-class ExamMark(Base):
+
+class ExamMark(Base, TenantMixin):
     __tablename__ = "exam_marks"
 
     id = Column(Integer, primary_key=True, index=True)
@@ -72,7 +79,8 @@ class ExamMark(Base):
     max_marks = Column(Float, default=100.0)
     remarks = Column(String(150))
 
-class CoCurricular(Base):
+
+class CoCurricular(Base, TenantMixin):
     __tablename__ = "co_curricular_records"
 
     id = Column(Integer, primary_key=True, index=True)
@@ -82,7 +90,8 @@ class CoCurricular(Base):
     attendance_percentage = Column(Float, default=100.0)
     remarks = Column(String(255))
 
-class Notice(Base):
+
+class Notice(Base, TenantMixin):
     __tablename__ = "notices"
 
     id = Column(Integer, primary_key=True, index=True)
@@ -95,7 +104,8 @@ class Notice(Base):
     message = Column(String(1000), nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow)
 
-class TeacherLeave(Base):
+
+class TeacherLeave(Base, TenantMixin):
     __tablename__ = "teacher_leaves"
 
     id = Column(Integer, primary_key=True, index=True)
@@ -106,7 +116,8 @@ class TeacherLeave(Base):
     reason = Column(String(255), nullable=False)
     status = Column(String(20), default="PENDING") # PENDING, APPROVED, REJECTED
 
-class TeacherTimetable(Base):
+
+class TeacherTimetable(Base, TenantMixin):
     __tablename__ = "teacher_timetables"
 
     id = Column(Integer, primary_key=True, index=True)

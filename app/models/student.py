@@ -1,12 +1,14 @@
 from sqlalchemy import Column, Integer, String, Text, Float, DateTime
 from sqlalchemy.sql import func
 from app.core.database import Base
+from app.models.tenant import TenantMixin
 
-class Student(Base):
+
+class Student(Base, TenantMixin):
     __tablename__ = "students"
 
     id = Column(Integer, primary_key=True, index=True)
-    gr_no = Column(String(50), unique=True, index=True, nullable=False)
+    gr_no = Column(String(50), index=True, nullable=False)
     
     # 4a - 4d Name breakdown
     last_name = Column(String(100), nullable=False)      # 4a Last Name / Surname
